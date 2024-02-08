@@ -3,22 +3,26 @@ module top
     input in_clk,
     input btn1,
     input btn2,
-    output [5:0] led
-);
+    output [5:0] led,
+    output f_out
+    );
 
 localparam MAXBIT = 31; 
 reg [5:0] ledCounter = 0;
-reg [MAXBIT:0] clockCounter = 0;
-reg [MAXBIT+1:0] increment = 1;
-reg [MAXBIT+1:0] carry = 0;
-reg [MAXBIT+1:0] newcarry = 0;
+reg [MAXBIT:0] phaseAccumulator = 0;
+reg [MAXBIT:0] phaseIncrement = 1;
+reg [MAXBIT:0] increment_next = 1;
+reg [MAXBIT:0] aa,bb,cc,carry = 0;
+reg [MAXBIT:0] newcarry = 0;
 
-reg [MAXBIT+1:0] sum = 0;
+reg [MAXBIT:0] sum = 0;
+
 reg last_btn1 = 0;
 reg last_btn2 = 0;
 
 wire out_clk;
 wire clk_lock;
+
 
 rPLL #( // For GW1NR-9C C6/I5 (Tang Nano 9K proto dev board)
   .FCLKIN("27"),
@@ -32,30 +36,41 @@ rPLL #( // For GW1NR-9C C6/I5 (Tang Nano 9K proto dev board)
 );
 
 always@(posedge out_clk) begin
-//    clockCounter <= clockCounter + increment;
-    sum[MAXBIT:0] <= clockCounter[MAXBIT:0] ^ increment[MAXBIT:0] ^ carry[MAXBIT:0];
-    newcarry <= (clockCounter[MAXBIT:0] & increment[MAXBIT:0]) | (increment[MAXBIT:0] & carry[MAXBIT:0]) | (clockCounter[MAXBIT:0] & carry[MAXBIT:0]);
-    carry[MAXBIT+1:1] <= newcarry[MAXBIT:0];
-    carry[0] <= 0;
-    clockCounter[MAXBIT:0] <= sum[MAXBIT:0];
-
-    ledCounter <= clockCounter[MAXBIT:MAXBIT-5];
+    carry <= newcarry << 1;
+    phaseAccumulator <= sum;
 end;
 
-always @(posedge in_clk) begin
-    if (~btn1 && last_btn1) begin
-        increment <= increment - 1;
-    end
-    else if (~btn2 && last_btn2) begin
-        increment <= increment + 1;
-    end
-    else if (~btn1 && ~btn2) begin
-        increment <= 0;
-    end;
-    last_btn1 <= btn1;
-    last_btn2 <= btn2;
+always @* begin
+//  newcarry <= (phaseAccumulator & phaseIncrement) | (phaseIncrement & carry) | (phaseAccumulator & carry);
+  aa <= phaseAccumulator & phaseIncrement;
+  bb <= phaseIncrement & carry;
+  cc <= phaseAccumulator & carry;
+  newcarry <= aa | bb | cc;
+  sum <= phaseAccumulator ^ phaseIncrement ^ carry;
+
+//  sum <= 1;
+//  newcarry <= 0;
 end
 
-assign led = ~ledCounter;
+// Button logic
+always@(posedge in_clk) begin
+  if (~btn1 && last_btn1)
+    increment_next <= phaseIncrement + 1;
+  else if (~btn2 && last_btn2)
+    increment_next <= phaseIncrement - 1;
+  else if (~btn1 && ~btn2)
+    increment_next <= 0;
+
+  last_btn1 <= btn1;
+  last_btn2 <= btn2;
+end
+
+// D flip-flop for phaseIncrement
+always @(posedge in_clk) begin
+  phaseIncrement <= increment_next;
+end
+
+assign led = ~phaseAccumulator[MAXBIT:MAXBIT-5];
+assign f_out = phaseAccumulator[MAXBIT];
 
 endmodule
